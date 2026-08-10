@@ -55,6 +55,18 @@ pub fn update(np: &NowPlaying) {
     windows::update(np);
 }
 
+/// Re-bind the OS media controls to a new native window handle.
+///
+/// Only meaningful on Windows, where SMTC is attached to an HWND whose
+/// lifetime we don't control: logout/server-switch destroys the window the
+/// controls were bound to and creates a replacement, which would otherwise
+/// silently kill media keys and the SMTC flyout for the rest of the process.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code, unused_variables))]
+pub fn rebind(hwnd: Option<*mut std::ffi::c_void>) {
+    #[cfg(target_os = "windows")]
+    windows::rebind(hwnd);
+}
+
 #[allow(dead_code)]
 pub fn clear() {
     #[cfg(target_os = "linux")]
