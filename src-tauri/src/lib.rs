@@ -458,6 +458,27 @@ async fn navigate_to_launcher(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Show and focus the main application window (used by the Linux MPRIS
+/// `Raise` method, invoked when the user clicks the desktop's media widget).
+/// Window operations are marshalled to the main thread: on Linux, GTK window
+/// calls are not safe from arbitrary threads (here: the zbus service thread).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn raise_main_window() {
+    if let Some(app) = APP_HANDLE.lock().unwrap().clone() {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Some(window) = handle
+                .get_webview_window("main")
+                .or_else(|| handle.get_webview_window("launcher"))
+            {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        });
+    }
+}
+
 /// Get current now-playing information
 #[tauri::command]
 fn get_now_playing() -> NowPlaying {

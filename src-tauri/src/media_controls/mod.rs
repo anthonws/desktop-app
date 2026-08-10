@@ -98,6 +98,10 @@ pub(crate) struct NowPlayingPlan {
     pub state: PlaybackState,
     pub rate: f64,
     pub image_url: Option<String>,
+    /// Whether the current item supports play, independent of playback state.
+    pub can_play: bool,
+    /// Whether the current item supports pause, independent of playback state.
+    pub can_pause: bool,
 }
 
 pub(crate) fn plan(np: &NowPlaying) -> NowPlayingPlan {
@@ -112,6 +116,18 @@ pub(crate) fn plan(np: &NowPlaying) -> NowPlayingPlan {
         PlaybackState::Playing => PLAYBACK_RATE_PLAYING,
         PlaybackState::Paused | PlaybackState::Stopped => PLAYBACK_RATE_STOPPED,
     };
+
+    // OS media surfaces (MPRIS spec explicitly; Control Center behaviorally)
+    // treat play/pause availability as intrinsic to the current item: it must
+    // not flip with the playback state, or the play half of a play/pause
+    // toggle greys out while playing. The upstream flags DO flip with state
+    // (the frontend sends can_play = !playing && controllable, can_pause =
+    // playing && controllable), so fold them back into a state-independent
+    // capability: a track is play/pause-controllable if either flag is set or
+    // it is currently playing. No track at all means neither action applies.
+    let has_track = np.track.is_some();
+    let controllable = has_track && (np.can_play || np.can_pause || np.is_playing);
+
     NowPlayingPlan {
         title: np.track.clone(),
         artist: np.artist.clone(),
@@ -121,6 +137,8 @@ pub(crate) fn plan(np: &NowPlaying) -> NowPlayingPlan {
         state,
         rate,
         image_url: np.image_url.clone(),
+        can_play: controllable,
+        can_pause: controllable,
     }
 }
 
@@ -165,6 +183,30 @@ mod tests {
         let p = plan(&np(true, None));
         assert_eq!(p.state, PlaybackState::Playing);
         assert_eq!(p.rate, PLAYBACK_RATE_PLAYING);
+    }
+
+    #[test]
+    fn can_play_pause_are_state_independent() {
+        // Playing with only can_pause set upstream: play must stay available.
+        let mut playing = np(true, Some("Song"));
+        playing.can_pause = true;
+        let p = plan(&playing);
+        assert!(p.can_play);
+        assert!(p.can_pause);
+
+        // Paused with only can_play set upstream: pause must stay available.
+        let mut paused = np(false, Some("Song"));
+        paused.can_play = true;
+        let p = plan(&paused);
+        assert!(p.can_play);
+        assert!(p.can_pause);
+
+        // No track: neither action applies, even with stray upstream flags.
+        let mut empty = np(false, None);
+        empty.can_play = true;
+        let p = plan(&empty);
+        assert!(!p.can_play);
+        assert!(!p.can_pause);
     }
 
     #[test]
