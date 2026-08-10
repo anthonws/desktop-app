@@ -102,6 +102,14 @@ pub(crate) struct NowPlayingPlan {
     pub can_play: bool,
     /// Whether the current item supports pause, independent of playback state.
     pub can_pause: bool,
+    /// Whether skipping to the next queue item is available.
+    pub can_next: bool,
+    /// Whether skipping to the previous queue item is available.
+    pub can_previous: bool,
+    /// Whether the current item is a live/unknown-length stream. Upstream
+    /// represents live streams as a track without a duration (sendspin maps
+    /// `track_duration == 0` to `None`; the frontend sends `null` for radio).
+    pub live: bool,
 }
 
 pub(crate) fn plan(np: &NowPlaying) -> NowPlayingPlan {
@@ -139,6 +147,11 @@ pub(crate) fn plan(np: &NowPlaying) -> NowPlayingPlan {
         image_url: np.image_url.clone(),
         can_play: controllable,
         can_pause: controllable,
+        // Queue navigation only applies while an item exists; mask stray
+        // upstream flags so no surface offers next/previous on an empty state.
+        can_next: has_track && np.can_next,
+        can_previous: has_track && np.can_previous,
+        live: has_track && np.duration.is_none(),
     }
 }
 
@@ -204,9 +217,13 @@ mod tests {
         // No track: neither action applies, even with stray upstream flags.
         let mut empty = np(false, None);
         empty.can_play = true;
+        empty.can_next = true;
+        empty.can_previous = true;
         let p = plan(&empty);
         assert!(!p.can_play);
         assert!(!p.can_pause);
+        assert!(!p.can_next, "queue flags are masked without a track");
+        assert!(!p.can_previous);
     }
 
     #[test]
@@ -217,6 +234,7 @@ mod tests {
         n.duration = Some(200.0);
         n.elapsed = Some(5.0);
         n.image_url = Some("http://host/cover.jpg".to_owned());
+        n.can_next = true;
 
         let p = plan(&n);
         assert_eq!(p.artist.as_deref(), Some("Artist"));
@@ -224,5 +242,18 @@ mod tests {
         assert_eq!(p.duration_secs, Some(200.0));
         assert_eq!(p.elapsed_secs, Some(5.0));
         assert_eq!(p.image_url.as_deref(), Some("http://host/cover.jpg"));
+        assert!(p.can_next);
+        assert!(!p.can_previous);
+        assert!(!p.live, "finite duration is not a live stream");
+    }
+
+    #[test]
+    fn live_stream_is_track_without_duration() {
+        let p = plan(&np(true, Some("Radio")));
+        assert!(p.live);
+
+        // No track at all is Stopped, not live.
+        let p = plan(&np(false, None));
+        assert!(!p.live);
     }
 }
