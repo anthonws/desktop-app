@@ -7,6 +7,7 @@
 //! - Controller role for sending commands
 //! - Metadata role for receiving track info
 
+mod device_rate;
 pub mod devices;
 mod now_playing_state;
 pub mod volume_control;
@@ -1313,6 +1314,13 @@ fn run_playback_thread(
                 // doc comment for why we do this on every CreatePlayer rather
                 // than caching a handle.
                 let device = devices::resolve_output_device(audio_device_id.as_deref());
+
+                // Put the hardware at the stream's rate before opening it, so the
+                // HAL has nothing to resample. See device_rate for why cpal alone
+                // does not do this.
+                if let Some(ref device) = device {
+                    device_rate::match_device_rate(device, format.sample_rate);
+                }
 
                 let player_config = SyncedPlayerConfig {
                     device,
