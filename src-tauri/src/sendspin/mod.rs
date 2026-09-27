@@ -1315,6 +1315,12 @@ fn run_playback_thread(
                 // than caching a handle.
                 let device = devices::resolve_output_device(audio_device_id.as_deref());
 
+                // Close the previous stream before touching the device's rate, so
+                // CoreAudio never reconfigures the hardware underneath a running
+                // IOProc. It was cleared above and is replaced below, so nothing
+                // is lost — and two streams are never open on the device at once.
+                synced_player = None;
+
                 // Put the hardware at the stream's rate before opening it, so the
                 // HAL has nothing to resample. See device_rate for why cpal alone
                 // does not do this.
